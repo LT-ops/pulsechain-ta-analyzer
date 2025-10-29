@@ -57,6 +57,9 @@ function renderChart(canvasId, candles, label) {
 function detectSetups(candles, rsi, macd, bb, closes, tokenId) {
   const alerts = [];
   const last = closes.length - 1;
+  if (volumes[last] > volumes[last-1] * 2) {
+  alerts.push(`Volume Spike: ${((volumes[last]/volumes[last-1]-1)*100).toFixed(0)}% – Whales Active`);
+}
 
   // RSI Oversold + Bullish
   if (rsi[last] < 30 && closes[last] > closes[last-1]) {
