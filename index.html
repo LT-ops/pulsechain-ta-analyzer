@@ -7,9 +7,12 @@
   <style>
     body { font-family: 'Courier New', monospace; margin: 0; padding: 20px; background: #0a0a0a; color: #00ff88; }
     header { text-align: center; margin-bottom: 20px; }
-    .controls { display: flex; gap: 10px; margin-bottom: 20px; flex-wrap: wrap; justify-content: center; }
-    input, button { background: #1a1a1a; color: #00ff88; border: 1px solid #333; padding: 10px; border-radius: 4px; font-size: 14px; }
-    button { cursor: pointer; background: #00ff88; color: #000; font-weight: bold; }
+    .search-container { position: relative; margin-bottom: 20px; text-align: center; }
+    #token-search { width: 300px; padding: 12px; background: #1a1a1a; color: #00ff88; border: 1px solid #333; border-radius: 4px; font-size: 16px; }
+    #suggestions { position: absolute; top: 50px; left: 50%; transform: translateX(-50%); width: 300px; max-height: 200px; overflow-y: auto; background: #111; border: 1px solid #333; z-index: 100; display: none; }
+    .suggestion { padding: 10px; cursor: pointer; border-bottom: 1px solid #333; }
+    .suggestion:hover { background: #222; }
+    button { background: #00ff88; color: #000; border: none; padding: 12px 20px; margin: 5px; border-radius: 4px; cursor: pointer; font-weight: bold; }
     button:hover { opacity: 0.8; }
     canvas { max-width: 100%; background: #000; border: 1px solid #333; margin: 10px 0; }
     #result { margin: 15px 0; padding: 15px; background: #111; border-left: 4px solid #00ff88; font-size: 15px; line-height: 1.6; }
@@ -17,24 +20,24 @@
     .sell { color: #ff6b6b; }
     .loading { color: #888; font-style: italic; text-align: center; padding: 20px; }
     .error { color: #ff6b6b; font-weight: bold; text-align: center; padding: 20px; }
-    .hidden { display: none; }
     footer { text-align: center; margin-top: 30px; }
   </style>
 
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
-  <script src="https://cdn.jsdelivr.net/npm/chartjs-adapter-date-fns@3.0.0/dist/chartjs-adapter-date-fns.bundle.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/chartjs-adapter-date-fns@3"></script>
   <script src="https://html2canvas.hertzen.com/dist/html2canvas.min.js"></script>
 </head>
 <body>
   <header>
     <h1>PulseChain Trade Assistant</h1>
-    <p>Enter token → Get BUY/SELL signal with entry, TP, SL</p>
+    <p>Search any token → Get profitable BUY/SELL signal</p>
   </header>
 
-  <section class="controls">
-    <input type="text" id="token" placeholder="e.g. pulsechain, hex, inc" value="pulsechain" />
-    <button onclick="analyze()">Analyze Trade</button>
-  </section>
+  <div class="search-container">
+    <input type="text" id="token-search" placeholder="Search any token (e.g. pls, hex, inc, elhex)" autocomplete="off" />
+    <div id="suggestions"></div>
+    <button onclick="analyze()">Analyze</button>
+  </div>
 
   <section id="chart-container">
     <canvas id="chart"></canvas>
@@ -49,7 +52,47 @@
     const API_KEY = 'CG-18Ek9nygCDX1ffwGdaiJkKFz';
     const COIN = 'https://api.coingecko.com/api/v3';
     let chart = null;
+    let selectedId = 'pulsechain';
 
+    // === DYNAMIC SEARCH ===
+    const searchInput = document.getElementById('token-search');
+    const suggestions = document.getElementById('suggestions');
+
+    searchInput.addEventListener('input', async () => {
+      const query = searchInput.value.trim();
+      if (query.length < 2) {
+        suggestions.style.display = 'none';
+        return;
+      }
+
+      try {
+        const res = await fetch(`${COIN}/search?query=${query}&x_cg_demo_api_key=${API_KEY}`);
+        const data = await res.json();
+        const coins = data.coins.slice(0, 8);
+
+        suggestions.innerHTML = coins.map(c => 
+          `<div class="suggestion" onclick="selectToken('${c.id}', '${c.name}')">${c.name} (${c.symbol.toUpperCase()})</div>`
+        ).join('');
+        suggestions.style.display = 'block';
+      } catch (e) {
+        suggestions.innerHTML = '<div class="suggestion">Error</div>';
+      }
+    });
+
+    window.selectToken = (id, name) => {
+      selectedId = id;
+      searchInput.value = `${name} (${id})`;
+      suggestions.style.display = 'none';
+    };
+
+    // Hide suggestions on click outside
+    document.addEventListener('click', (e) => {
+      if (!searchInput.contains(e.target) && !suggestions.contains(e.target)) {
+        suggestions.style.display = 'none';
+      }
+    });
+
+    // === INDICATORS & SIGNALS (SAME AS BEFORE) ===
     function calcRSI(prices, period = 14) {
       if (prices.length < period + 1) return 50;
       let gains = 0, losses = 0;
@@ -121,18 +164,17 @@
       if (chart) chart.destroy();
       chart = new Chart(ctx, {
         type: 'line',
-        data: { datasets: [{ label, data: candles.map(c => ({ x: c.x, y: c.c })), borderColor: '#00ff88' }] },
+        data: { datasets: [{ label, data: candles.map(c => ({ x: c.x, y: c.c })), borderColor: '#00ff88', tension: 0.1 }] },
         options: { scales: { x: { type: 'time', time: { unit: 'day' } } } }
       });
     }
 
     async function analyze() {
-      const id = document.getElementById('token').value.trim().toLowerCase();
       const result = document.getElementById('result');
-      result.innerHTML = '<div class="loading">Scanning market...</div>';
+      result.innerHTML = '<div class="loading">Fetching data...</div>';
 
       try {
-        const res = await fetch(`${COIN}/coins/${id}/ohlc?vs_currency=usd&days=30&x_cg_demo_api_key=${API_KEY}`);
+        const res = await fetch(`${COIN}/coins/${selectedId}/ohlc?vs_currency=usd&days=30&x_cg_demo_api_key=${API_KEY}`);
         if (!res.ok) throw new Error(`HTTP ${res.status}`);
         const ohlc = await res.json();
         if (!ohlc.length) throw new Error('No data');
@@ -143,24 +185,24 @@
         const lows = ohlc.map(x => x[3]);
         const closes = prices;
 
-        const volRes = await fetch(`${COIN}/coins/${id}/market_chart?vs_currency=usd&days=30&x_cg_demo_api_key=${API_KEY}`);
+        const volRes = await fetch(`${COIN}/coins/${selectedId}/market_chart?vs_currency=usd&days=30&x_cg_demo_api_key=${API_KEY}`);
         const volData = await volRes.json();
         const volumes = volData.total_volumes.map(x => x[1]);
 
         const data = { prices, highs, lows, closes, volumes };
         const signal = generateSignal(data);
 
-        renderChart(candles, id.toUpperCase());
+        renderChart(candles, selectedId.toUpperCase());
 
         const signalClass = signal.signal === 'BUY' ? '' : signal.signal === 'SELL' ? 'sell' : '';
         result.innerHTML = `
-          <div class="signal ${signalClass}">${signal.signal} ${id.toUpperCase()}</div>
+          <div class="signal ${signalClass}">${signal.signal} ${selectedId.toUpperCase()}</div>
           <div>Entry: $${signal.entry}</div>
           <div>TP1: $${signal.tp1} <small>(+${((signal.tp1/signal.entry-1)*100).toFixed(1)}%)</small></div>
           <div>TP2: $${signal.tp2}</div>
           <div>SL: $${signal.sl}</div>
           <div>Risk/Reward: 1:${signal.rr}</div>
-          <div><small>Reason: ${signal.reason}</small></div>
+          <div><small>Reason: ${signal.reason || 'No strong signal'}</small></div>
         `;
 
       } catch (e) {
@@ -171,10 +213,11 @@
     function exportSetup() {
       html2canvas(document.getElementById('chart-container')).then(c => {
         const a = document.createElement('a');
-        a.href = c.toDataURL(); a.download = 'trade-plan.png'; a.click();
+        a.href = c.toDataURL(); a.download = 'trade-signal.png'; a.click();
       });
     }
 
+    // Auto-load on start
     setTimeout(analyze, 1000);
   </script>
 </body>
