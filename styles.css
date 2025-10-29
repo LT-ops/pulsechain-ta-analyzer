@@ -28,5 +28,8 @@ th, td { border: 1px solid #333; padding: 8px; text-align: left; }
 th { background: #1a1a1a; }
 .hidden { display: none; }
 footer { text-align: center; margin-top: 20px; }
-.loading { color: #888; font-style: italic; }
-.error { color: #ff6b6b; font-weight: bold; }
+.loading { color: #888; font-style: italic; text-align: center; }
+.error   { color: #ff6b6b; font-weight: bold; text-align: center; }
+.no-alert { color: #555; text-align: center; }
+.alert   { background:#111; border-left:3px solid #00ff88; padding:8px; margin:5px 0; }
+.dex-alert { background:#111; padding:8px; margin-top:10px; }
