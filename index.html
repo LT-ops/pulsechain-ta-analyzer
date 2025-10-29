@@ -2,157 +2,56 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-  <title>PulseChain Autonomous Trader</title>
-  <style>
-    body { font-family: 'Courier New', monospace; margin: 0; padding: 20px; background: #0a0a0a; color: #00ff88; }
-    header { text-align: center; margin-bottom: 20px; }
-    .controls { display: flex; gap: 10px; margin-bottom: 20px; flex-wrap: wrap; justify-content: center; }
-    input, button { background: #1a1a1a; color: #00ff88; border: 1px solid #333; padding: 10px; border-radius: 4px; font-size: 14px; }
-    button { cursor: pointer; background: #00ff88; color: #000; font-weight: bold; }
-    button:hover { opacity: 0.8; }
-    canvas { max-width: 100%; background: #000; border: 1px solid #333; margin: 10px 0; }
-    #result, #scanner { margin: 15px 0; padding: 15px; background: #111; border-left: 4px solid #00ff88; font-size: 15px; line-height: 1.6; }
-    .signal { font-weight: bold; font-size: 18px; color: #0f0; }
-    .sell { color: #ff6b6b; }
-    .hold { color: #aaa; }
-    .loading { color: #888; font-style: italic; text-align: center; padding: 20px; }
-    .error { color: #ff6b6b; font-weight: bold; text-align: center; padding: 20px; }
-    table { width: 100%; border-collapse: collapse; margin: 10px 0; }
-    th, td { border: 1px solid #333; padding: 8px; text-align: left; font-size: 13px; }
-    th { background: #1a1a1a; }
-    footer { text-align: center; margin-top: 30px; }
-  </style>
-
-  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
-  <script src="https://cdn.jsdelivr.net/npm/chartjs-adapter-date-fns@3"></script>
-  <script src="https://html2canvas.hertzen.com/dist/html2canvas.min.js"></script>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>PulseChain TA Setup Analyzer</title>
+  <link rel="stylesheet" href="styles.css">
 </head>
 <body>
+
   <header>
-    <h1>PulseChain Autonomous Trader</h1>
-    <p>Auto-scans 10+ tokens every 5 min → Alerts on profit</p>
+    <h1>PulseChain TA Setup Analyzer</h1>
+    <p>Technical analysis toolkit to find setups on PulseChain tokens.</p>
   </header>
 
-  <div class="controls">
-    <button onclick="toggleScanner()">Scanner Mode</button>
-    <button onclick="startAuto()">Auto-Run ON</button>
-    <button onclick="stopAuto()">Stop</button>
-  </div>
+  <main>
+    <div class="controls">
+      <input type="text" id="token" value="pulsechain" placeholder="CoinGecko Token ID...">
+      <button onclick="loadSingle()">Load</button>
+      <button onclick="toggleScanner()">Scan Top 10</button>
+      <button onclick="connectWallet()">Connect MetaMask</button>
+    </div>
 
-  <section id="scanner" class="hidden">
-    <h3>Live Scanner (Updates every 5 min)</h3>
-    <table id="scanner-table">
-      <thead><tr><th>Token</th><th>Price</th><th>Signal</th><th>TP1</th><th>SL</th><th>Reason</th></tr></thead>
-      <tbody></tbody>
-    </table>
-  </section>
+    <canvas id="chart"></canvas>
+    <div id="alerts"></div>
+    <div id="dex-info"></div>
 
-  <section id="single-result"></section>
+    <section id="scanner-section" class="hidden">
+      <h2>Top 10 Scanner</h2>
+      <table id="scanner-table">
+        <thead>
+          <tr>
+            <th>Token</th>
+            <th>Price</th>
+            <th>RSI (14d)</th>
+            <th>Setup</th>
+            <th>Liquidity</th>
+          </tr>
+        </thead>
+        <tbody></tbody>
+      </table>
+    </section>
+  </main>
 
   <footer>
-    <button onclick="exportSetup()">Export</button>
+    <button onclick="exportSetup()">Export Setup (JSON)</button>
   </footer>
 
-  <script>
-    const API_KEY = 'CG-18Ek9nygCDX1ffwGdaiJkKFz';
-    const COIN = 'https://api.coingecko.com/api/v3';
-    const PULSEX = 'https://api.pulsex.com/v1';
-    let chart = null;
-    let autoInterval = null;
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/chartjs-adapter-date-fns@3.0.0"></script>
+  <script src="https://cdn.jsdelivr.net/npm/technicalindicators@3.1.0/dist/browser.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-trendline@2.0.1/src/chartjs-plugin-trendline.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/chartjs-chart-financial@0.1.1/dist/chartjs-chart-financial.min.js"></script>
+  <script src="script.js"></script>
 
-    // PulseChain tokens with CoinGecko + PulseX IDs
-    const TOKENS = [
-      { name: 'PLS', id: 'pulsechain', pulsex: '0x...' },
-      { name: 'HEX', id: 'hex', pulsex: '0x...' },
-      { name: 'eHEX', id: 'elhex', pulsex: '0x...' },
-      { name: 'PLSX', id: 'pulsex', pulsex: '0x...' },
-      { name: 'INC', id: 'inc', pulsex: '0x...' },
-      { name: 'TIME', id: 'wonderland', pulsex: '0x...' },
-      { name: 'LIQ', id: 'liquidus', pulsex: '0x...' },
-      { name: 'ATROPA', id: 'atropa', pulsex: '0x...' },
-    ];
-
-    // === PULSEX LIQUIDITY & VOLUME ===
-    async function getPulseXLiquidity(id) {
-      try {
-        const res = await fetch(`${PULSEX}/pairs?token=${id}`);
-        const data = await res.json();
-        return { liquidity: data.liquidity, volume24h: data.volume24h };
-      } catch { return { liquidity: 0, volume24h: 0 }; }
-    }
-
-    // === SIGNAL ENGINE (PULSEX + CG) ===
-    async function generateSignal(token) {
-      try {
-        const cg = await fetch(`${COIN}/coins/${token.id}/market_chart?vs_currency=usd&days=7&x_cg_demo_api_key=${API_KEY}`).then(r => r.json());
-        const px = await getPulseXLiquidity(token.pulsex);
-
-        const closes = cg.prices.map(p => p[1]);
-        const volumes = cg.total_volumes.map(v => v[1]);
-        const current = closes[closes.length-1];
-        const rsi = calcRSI(closes);
-        const macd = calcMACD(closes);
-        const volSpike = volumes[volumes.length-1] / (volumes.slice(-7).reduce((a,b)=>a+b)/7);
-
-        let signal = 'HOLD';
-        let entry = current.toFixed(8);
-        let tp1 = '—', sl = '—';
-        let reason = 'No edge';
-
-        if (rsi < 40 && macd > 0 && volSpike > 1.3 && px.liquidity > 50000) {
-          signal = 'BUY';
-          entry = (current * 0.99).toFixed(8);
-          tp1 = (current * 1.10).toFixed(8);
-          sl = (current * 0.92).toFixed(8);
-          reason = `RSI ${rsi.toFixed(1)} + MACD bull + Vol ${volSpike.toFixed(1)}x + Liq $${(px.liquidity/1e6).toFixed(1)}M`;
-        }
-
-        return { signal, entry, tp1, sl, reason, price: current.toFixed(6) };
-      } catch { return { signal: 'ERROR', price: '—' }; }
-    }
-
-    // === SCANNER ===
-    async function runScanner() {
-      const tbody = document.querySelector('#scanner-table tbody');
-      tbody.innerHTML = '<tr><td colspan="6" class="loading">Scanning PulseChain...</td></tr>';
-      const rows = [];
-
-      for (const t of TOKENS) {
-        const sig = await generateSignal(t);
-        const color = sig.signal === 'BUY' ? 'style="color:#0f0"' : sig.signal === 'SELL' ? 'style="color:#ff6b6b"' : '';
-        rows.push(`<tr ${color}><td>${t.name}</td><td>$${sig.price}</td><td><strong>${sig.signal}</strong></td><td>$${sig.tp1}</td><td>$${sig.sl}</td><td><small>${sig.reason}</small></td></tr>`);
-      }
-
-      tbody.innerHTML = rows.join('');
-    }
-
-    function toggleScanner() {
-      document.getElementById('scanner').classList.toggle('hidden');
-      if (!document.getElementById('scanner').classList.contains('hidden')) runScanner();
-    }
-
-    function startAuto() {
-      if (autoInterval) return;
-      runScanner();
-      autoInterval = setInterval(runScanner, 5 * 60 * 1000); // 5 min
-      alert('Auto-scanner ON — checks every 5 min');
-    }
-
-    function stopAuto() {
-      clearInterval(autoInterval);
-      autoInterval = null;
-      alert('Auto-scanner OFF');
-    }
-
-    // === UTILS ===
-    function calcRSI(p) { /* same as before */ }
-    function calcMACD(p) { /* same */ }
-
-    function exportSetup() { /* same */ }
-
-    // Start on load
-    setTimeout(runScanner, 1000);
-  </script>
 </body>
 </html>

@@ -27,8 +27,9 @@ async function loadSingle() {
   const tokenId = document.getElementById('token').value.trim().toLowerCase();
   const alertsDiv = document.getElementById('alerts');
   const dexDiv = document.getElementById('dex-info');
+  const days = 30; // Define days for the fetch calls
 
-  alertsDiv.innerHTML = '<div class="loading">Fetching data from CoinGecko...</div>';
+  alertsDiv.innerHTML = '<div class="loading">Fetching data...</div>';
   dexDiv.innerHTML = '';
 
   if (!tokenId) {
@@ -37,58 +38,43 @@ async function loadSingle() {
   }
 
   try {
-    // USE CORS PROXY
+    // Use a CORS proxy for CoinGecko API
     const proxy = 'https://corsproxy.io/?';
-    const url = `${proxy}https://api.coingecko.com/api/v3/coins/${tokenId}/ohlc?vs_currency=usd&days=30`;
+    const ohlcUrl = `${proxy}https://api.coingecko.com/api/v3/coins/${tokenId}/ohlc?vs_currency=usd&days=${days}`;
+    const marketUrl = `${proxy}https://api.coingecko.com/api/v3/coins/${tokenId}/market_chart?vs_currency=usd&days=${days}`;
 
-    console.log('Fetching:', url); // DEBUG
-    const res = await fetch(url);
-    
-    if (!res.ok) {
-      const text = await res.text();
-      throw new Error(`HTTP ${res.status}: ${text.substring(0, 200)}`);
-    }
+    // Fetch both OHLC and market data
+    const [ohlcRes, marketRes] = await Promise.all([
+      fetch(ohlcUrl),
+      fetch(marketUrl)
+    ]);
 
-    const ohlc = await res.json();
+    if (!ohlcRes.ok) throw new Error(`OHLC fetch failed: ${ohlcRes.statusText}`);
+    if (!marketRes.ok) throw new Error(`Market fetch failed: ${marketRes.statusText}`);
+
+    const ohlc = await ohlcRes.json();
+    const market = await marketRes.json();
+
     if (!ohlc || ohlc.length === 0) throw new Error('No OHLC data returned');
 
-    // SUCCESS — continue with chart
-    alertsDiv.innerHTML = `<div style="color:yellow">Data loaded! (${ohlc.length} candles)</div>`;
-    
-    // ... rest of your chart code ...
+    // Process data for charts and indicators
     const candles = ohlc.map(([ts, o, h, l, c]) => ({ x: new Date(ts), o, h, l, c }));
     const closes = ohlc.map(d => d[4]);
-    const rsi = TI.RSI.calculate({ values: closes, period: 14 });
-    const macd = TI.MACD.calculate({ values: closes, fastPeriod: 12, slowPeriod: 26, signalPeriod: 9 });
-    const bb = TI.BollingerBands.calculate({ values: closes, period: 20, stdDev: 2 });
+    const volumes = market.total_volumes?.map(v => v[1]) ?? [];
 
+    // Calculate technical indicators
+    const rsi = ti.RSI.calculate({ values: closes, period: 14 });
+    const macd = ti.MACD.calculate({ values: closes, fastPeriod: 12, slowPeriod: 26, signalPeriod: 9 });
+    const bb = ti.BollingerBands.calculate({ values: closes, period: 20, stdDev: 2 });
+
+    alertsDiv.innerHTML = ''; // Clear loading message
     renderChart('chart', candles, tokenId.toUpperCase());
-    detectSetups(candles, rsi, macd, bb, closes, [], tokenId);
+    detectSetups(candles, rsi, macd, bb, closes, volumes, tokenId);
+    await loadDexInfo(tokenId);
 
   } catch (e) {
     console.error('Load failed:', e);
     alertsDiv.innerHTML = `<div class="error">API ERROR: ${e.message}</div>`;
-  }
-}
-
-    // ---- market chart for volume ----
-    const marketRes = await fetch(`${COINGECKO_BASE}/coins/${tokenId}/market_chart?vs_currency=usd&days=${days}`);
-    const market = await marketRes.json();
-
-    const candles = ohlc.map(([ts, o, h, l, c]) => ({ x: new Date(ts), o, h, l, c }));
-    const closes  = ohlc.map(d => d[4]);
-    const volumes = market.total_volumes?.map(v => v[1]) ?? [];
-
-    const rsi = TI.RSI.calculate({ values: closes, period: 14 });
-    const macd = TI.MACD.calculate({ values: closes, fastPeriod: 12, slowPeriod: 26, signalPeriod: 9 });
-    const bb   = TI.BollingerBands.calculate({ values: closes, period: 20, stdDev: 2 });
-
-    renderChart('chart', candles, tokenId.toUpperCase());
-    detectSetups(candles, rsi, macd, bb, closes, volumes, tokenId);
-    await loadDexInfo(tokenId);
-  } catch (e) {
-    alertsDiv.innerHTML = `<div class="error">Error: ${e.message}</div>`;
-    console.error(e);
   }
 }
 
@@ -193,12 +179,17 @@ async function runScanner() {
   tbody.innerHTML = '<tr><td colspan="5" class="loading">Scanning top tokens…</td></tr>';
 
   const rows = [];
+  const proxy = 'https://corsproxy.io/?';
+
   for (const token of TOP_TOKENS.slice(0, 10)) {
     try {
-      const res = await fetch(`${COINGECKO_BASE}/coins/${token.id}/market_chart?vs_currency=usd&days=7`);
+      const url = `${proxy}https://api.coingecko.com/api/v3/coins/${token.id}/market_chart?vs_currency=usd&days=7`;
+      const res = await fetch(url);
+      if (!res.ok) throw new Error(`API fetch failed: ${res.statusText}`);
+
       const data = await res.json();
       const closes = data.prices.map(p => p[1]);
-      const rsi = TI.RSI.calculate({ values: closes, period: 14 }).slice(-1)[0];
+      const rsi = ti.RSI.calculate({ values: closes, period: 14 }).slice(-1)[0];
       const price = closes[closes.length - 1];
       const setup = rsi < 30 ? 'Oversold' : rsi > 70 ? 'Overbought' : 'Neutral';
       const liq = token.pair ? 'High' : '—';
@@ -211,7 +202,8 @@ async function runScanner() {
         <td>${liq}</td>
       </tr>`);
     } catch (e) {
-      rows.push(`<tr><td colspan="5" class="error">Failed: ${token.symbol}</td></tr>`);
+      console.error(`Scanner failed for ${token.symbol}:`, e);
+      rows.push(`<tr><td colspan="5" class="error">API Error: ${token.symbol}</td></tr>`);
     }
   }
   tbody.innerHTML = rows.join('');
