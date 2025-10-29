@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-  <title>PulseChain TA Detector</title>
+  <title>PulseChain Trade Assistant</title>
   <style>
     body { font-family: 'Courier New', monospace; margin: 0; padding: 20px; background: #0a0a0a; color: #00ff88; }
     header { text-align: center; margin-bottom: 20px; }
@@ -12,149 +12,181 @@
     button { cursor: pointer; background: #00ff88; color: #000; font-weight: bold; }
     button:hover { opacity: 0.8; }
     canvas { max-width: 100%; background: #000; border: 1px solid #333; margin: 10px 0; }
-    #alerts { margin: 10px 0; padding: 10px; background: #111; border-left: 3px solid #00ff88; font-size: 14px; }
+    #result { margin: 15px 0; padding: 15px; background: #111; border-left: 4px solid #00ff88; font-size: 15px; line-height: 1.6; }
+    .signal { font-weight: bold; font-size: 18px; color: #0f0; }
+    .sell { color: #ff6b6b; }
     .loading { color: #888; font-style: italic; text-align: center; padding: 20px; }
     .error { color: #ff6b6b; font-weight: bold; text-align: center; padding: 20px; }
-    .no-alert { color: #555; text-align: center; padding: 20px; }
-    .alert { background:#111; border-left:3px solid #00ff88; padding:10px; margin:8px 0; font-size: 14px; }
-    table { width: 100%; border-collapse: collapse; margin: 10px 0; font-size: 13px; }
-    th, td { border: 1px solid #333; padding: 8px; text-align: left; }
-    th { background: #1a1a1a; }
     .hidden { display: none; }
     footer { text-align: center; margin-top: 30px; }
   </style>
 
-  <!-- FIXED CHART.JS (UMD + ADAPTER) -->
-  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.js"></script>
-  <script src="https://cdn.jsdelivr.net/npm/chartjs-adapter-date-fns@3.0.0/dist/chartjs-adapter-date-fns.bundle.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0"></script>
+  <script src="https://cdn.jsdelivr.net/npm/luxon"></script>
+  <script src="https://cdn.jsdelivr.net/npm/chartjs-adapter-luxon"></script>
   <script src="https://html2canvas.hertzen.com/dist/html2canvas.min.js"></script>
 </head>
 <body>
   <header>
-    <h1>PulseChain TA Detector</h1>
-    <p>Live TA for PLS, HEX, eHEX & more</p>
+    <h1>PulseChain Trade Assistant</h1>
+    <p>Enter token → Get BUY/SELL signal with entry, TP, SL</p>
   </header>
 
   <section class="controls">
-    <input type="text" id="token" placeholder="e.g. pulsechain" value="pulsechain" />
-    <button onclick="loadSingle()">Load</button>
-    <button onclick="toggleScanner()">Scanner</button>
+    <input type="text" id="token" placeholder="e.g. pulsechain, hex, inc" value="pulsechain" />
+    <button onclick="analyze()">Analyze Trade</button>
   </section>
 
-  <section id="single-chart">
+  <section id="chart-container">
     <canvas id="chart"></canvas>
-    <div id="alerts"></div>
-  </section>
-
-  <section id="scanner-section" class="hidden">
-    <h2>Top Tokens</h2>
-    <table id="scanner-table">
-      <thead><tr><th>Token</th><th>Price</th><th>RSI</th><th>Setup</th></tr></thead>
-      <tbody></tbody>
-    </table>
+    <div id="result"></div>
   </section>
 
   <footer>
-    <button onclick="exportSetup()">Export PNG</button>
+    <button onclick="exportSetup()">Export Trade Plan</button>
   </footer>
 
   <script>
-    // PASTE YOUR REAL COINGECKO API KEY HERE (e.g., 'CG-abc123...')
-    const API_KEY = 'CG-18Ek9nygCDX1ffwGdaiJkKFz';  // REPLACE THIS
+    const API_KEY = 'CG-18Ek9nygCDX1ffwGdaiJkKFz';
     const COIN = 'https://api.coingecko.com/api/v3';
-
-    const TOKENS = [
-      { id: 'pulsechain', s: 'PLS' },
-      { id: 'hex', s: 'HEX' },
-      { id: 'elhex', s: 'eHEX' },
-      { id: 'pulsex', s: 'PLSX' },
-      { id: 'inc', s: 'INC' }
-    ];
-
     let chart = null;
 
-    function renderChart(data, label) {
-      const ctx = document.getElementById('chart').getContext('2d');
-      if (chart) chart.destroy();
-      chart = new Chart(ctx, {
-        type: 'line',  // Changed to line for simplicity (candlestick CDN fixed)
-        data: { datasets: [{ label, data, borderColor: '#00ff88' }] },
-        options: { scales: { x: { type: 'time', time: { unit: 'day' } } } }
-      });
-    }
-
-    async function loadSingle() {
-      const id = document.getElementById('token').value.trim().toLowerCase();
-      const a = document.getElementById('alerts');
-      a.innerHTML = '<div class="loading">Loading...</div>';
-
-      if (!API_KEY || API_KEY === 'CG-18Ek9nygCDX1ffwGdaiJkKFz') {
-        a.innerHTML = '<div class="error">Add your CoinGecko API key! (Line 91)</div>';
-        return;
-      }
-
-      try {
-        const res = await fetch(`${COIN}/coins/${id}/ohlc?vs_currency=usd&days=30&x_cg_demo_api_key=${API_KEY}`);
-        if (!res.ok) throw new Error(`HTTP ${res.status} - Check API key`);
-        const d = await res.json();
-        if (!d.length) throw new Error('No data');
-
-        const data = d.map(([t, o, h, l, c]) => ({ x: new Date(t), y: c }));  // Line chart data
-        const closes = d.map(x => x[4]);
-        const rsi = calcRSI(closes);
-
-        renderChart(data, id.toUpperCase());
-        const alert = rsi < 30 ? 'OVERSOLD 🚀' : rsi > 70 ? 'OVERBOUGHT ⚠️' : 'NEUTRAL';
-        a.innerHTML = `<div class="alert">RSI: ${rsi.toFixed(1)} → ${alert}</div>`;
-
-      } catch (e) {
-        a.innerHTML = `<div class="error">Failed: ${e.message}</div>`;
-      }
-    }
-
-    function calcRSI(arr) {
-      if (arr.length < 15) return 50;
+    // === INDICATORS ===
+    function calcRSI(prices, period = 14) {
+      if (prices.length < period + 1) return 50;
       let gains = 0, losses = 0;
-      for (let i = arr.length - 14; i < arr.length; i++) {
-        const diff = arr[i] - arr[i-1];
+      for (let i = prices.length - period; i < prices.length; i++) {
+        const diff = prices[i] - prices[i-1];
         if (diff > 0) gains += diff; else losses -= diff;
       }
       const rs = gains / (losses || 1);
       return 100 - (100 / (1 + rs));
     }
 
-    async function toggleScanner() {
-      const s = document.getElementById('scanner-section');
-      s.classList.toggle('hidden');
-      if (!s.classList.contains('hidden')) runScanner();
+    function calcMACD(prices) {
+      const ema = (arr, period) => {
+        const k = 2/(period + 1);
+        let ema = arr[0];
+        for (let i = 1; i < arr.length; i++) ema = arr[i] * k + ema * (1 - k);
+        return ema;
+      };
+      const ema12 = ema(prices.slice(-26), 12);
+      const ema26 = ema(prices.slice(-26), 26);
+      return ema12 - ema26;
     }
 
-    async function runScanner() {
-      const tbody = document.querySelector('#scanner-table tbody');
-      tbody.innerHTML = '<tr><td colspan="4" class="loading">Scanning...</td></tr>';
-      const rows = [];
-      for (const t of TOKENS) {
-        try {
-          const res = await fetch(`${COIN}/coins/${t.id}/market_chart?vs_currency=usd&days=7&x_cg_demo_api_key=${API_KEY}`);
-          if (!res.ok) continue;
-          const d = await res.json();
-          const p = d.prices[d.prices.length-1][1];
-          const rsi = calcRSI(d.prices.map(x => x[1]));
-          const setup = rsi < 30 ? 'Oversold' : rsi > 70 ? 'Overbought' : 'Neutral';
-          rows.push(`<tr><td>${t.s}</td><td>$${p.toFixed(6)}</td><td>${rsi.toFixed(1)}</td><td>${setup}</td></tr>`);
-        } catch {}
+    function calcATR(highs, lows, closes, period = 14) {
+      const tr = [];
+      for (let i = 1; i < highs.length; i++) {
+        tr.push(Math.max(highs[i] - lows[i], Math.abs(highs[i] - closes[i-1]), Math.abs(lows[i] - closes[i-1])));
       }
-      tbody.innerHTML = rows.length ? rows.join('') : '<tr><td colspan="4">No data</td></tr>';
+      return tr.slice(-period).reduce((a,b) => a+b)/period;
     }
 
-    function exportSetup() {
-      html2canvas(document.getElementById('single-chart')).then(c => {
-        const a = document.createElement('a');
-        a.href = c.toDataURL(); a.download = 'pulsechain-ta.png'; a.click();
+    // === TRADE SIGNAL ENGINE ===
+    function generateSignal(data) {
+      const { prices, highs, lows, closes, volumes } = data;
+      const current = closes[closes.length-1];
+      const rsi = calcRSI(closes);
+      const macd = calcMACD(closes);
+      const atr = calcATR(highs, lows, closes);
+      const avgVol = volumes.slice(-7).reduce((a,b) => a+b)/7;
+      const volSpike = volumes[volumes.length-1] / avgVol;
+
+      let signal = 'HOLD';
+      let entry = current;
+      let tp1 = current, tp2 = current, sl = current;
+      let reason = [];
+
+      // BUY CONDITIONS
+      if (rsi < 32 && macd > 0 && volSpike > 1.5) {
+        signal = 'BUY';
+        entry = current * 0.99;
+        tp1 = current * 1.08;
+        tp2 = current * 1.15;
+        sl = current - 2 * atr;
+        reason.push('RSI oversold', 'MACD bullish', 'Volume spike');
+      }
+      // SELL CONDITIONS
+      else if (rsi > 68 && macd < 0 && current > prices[prices.length-7]) {
+        signal = 'SELL';
+        entry = current * 1.01;
+        tp1 = current * 0.93;
+        tp2 = current * 0.88;
+        sl = current + 2 * atr;
+        reason.push('RSI overbought', 'MACD bearish', 'Local top');
+      }
+
+      const rr = signal === 'BUY' 
+        ? ((tp1 - entry) / (entry - sl)).toFixed(1)
+        : ((entry - tp1) / (sl - entry)).toFixed(1);
+
+      return { signal, entry: entry.toFixed(8), tp1: tp1.toFixed(8), tp2: tp2.toFixed(8), sl: sl.toFixed(8), rr, reason: reason.join(' + ') };
+    }
+
+    // === RENDER CHART ===
+    function renderChart(candles, label) {
+      const ctx = document.getElementById('chart').getContext('2d');
+      if (chart) chart.destroy();
+      chart = new Chart(ctx, {
+        type: 'candlestick',
+        data: { datasets: [{ label, data: candles, borderColor: '#00ff88' }] },
+        options: { scales: { x: { type: 'time', time: { unit: 'day' } } } }
       });
     }
 
-    setTimeout(loadSingle, 1000);
+    // === MAIN ANALYZE ===
+    async function analyze() {
+      const id = document.getElementById('token').value.trim().toLowerCase();
+      const result = document.getElementById('result');
+      result.innerHTML = '<div class="loading">Scanning market...</div>';
+
+      try {
+        const res = await fetch(`${COIN}/coins/${id}/ohlc?vs_currency=usd&days=30&x_cg_demo_api_key=${API_KEY}`);
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        const ohlc = await res.json();
+        if (!ohlc.length) throw new Error('No data');
+
+        const candles = ohlc.map(([t, o, h, l, c]) => ({ x: new Date(t), o, h, l, c }));
+        const prices = ohlc.map(x => x[4]);
+        const highs = ohlc.map(x => x[2]);
+        const lows = ohlc.map(x => x[3]);
+        const closes = prices;
+
+        // Fetch volume
+        const volRes = await fetch(`${COIN}/coins/${id}/market_chart?vs_currency=usd&days=30&x_cg_demo_api_key=${API_KEY}`);
+        const volData = await volRes.json();
+        const volumes = volData.total_volumes.map(x => x[1]);
+
+        const data = { prices, highs, lows, closes, volumes };
+        const signal = generateSignal(data);
+
+        renderChart(candles, id.toUpperCase());
+
+        const signalClass = signal.signal === 'BUY' ? '' : signal.signal === 'SELL' ? 'sell' : '';
+        result.innerHTML = `
+          <div class="signal ${signalClass}">${signal.signal} ${id.toUpperCase()}</div>
+          <div>Entry: $${signal.entry}</div>
+          <div>TP1: $${signal.tp1} <small>(+${((signal.tp1/signal.entry-1)*100).toFixed(1)}%)</small></div>
+          <div>TP2: $${signal.tp2}</div>
+          <div>SL: $${signal.sl}</div>
+          <div>Risk/Reward: 1:${signal.rr}</div>
+          <div><small>Reason: ${signal.reason}</small></div>
+        `;
+
+      } catch (e) {
+        result.innerHTML = `<div class="error">Failed: ${e.message}</div>`;
+      }
+    }
+
+    function exportSetup() {
+      html2canvas(document.getElementById('chart-container')).then(c => {
+        const a = document.createElement('a');
+        a.href = c.toDataURL(); a.download = 'trade-plan.png'; a.click();
+      });
+    }
+
+    setTimeout(analyze, 1000);
   </script>
 </body>
 </html>
