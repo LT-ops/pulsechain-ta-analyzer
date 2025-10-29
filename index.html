@@ -21,10 +21,11 @@
     footer { text-align: center; margin-top: 30px; }
   </style>
 
+  <!-- CHART.JS + FINANCIAL PLUGIN (FIXED) -->
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0"></script>
-  <script src="https://cdn.jsdelivr.net/npm/luxon"></script>
-  <script src="https://cdn.jsdelivr.net/npm/chartjs-adapter-luxon"></script>
-  <script src="https://html2canvas.hertzen.com/dist/html2canvas.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/chartjs-chart-financial@0.2.1"></script>
+  <script src="https://cdn.jsdelivr.net/npm/luxon@3"></script>
+  <script src="https://cdn.jsdelivr.net/npm/chartjs-adapter-luxon@1"></script>
 </head>
 <body>
   <header>
@@ -80,7 +81,7 @@
       for (let i = 1; i < highs.length; i++) {
         tr.push(Math.max(highs[i] - lows[i], Math.abs(highs[i] - closes[i-1]), Math.abs(lows[i] - closes[i-1])));
       }
-      return tr.slice(-period).reduce((a,b) => a+b)/period;
+      return tr.slice(-period).reduce((a,b) => a+b, 0)/period;
     }
 
     // === TRADE SIGNAL ENGINE ===
@@ -90,7 +91,7 @@
       const rsi = calcRSI(closes);
       const macd = calcMACD(closes);
       const atr = calcATR(highs, lows, closes);
-      const avgVol = volumes.slice(-7).reduce((a,b) => a+b)/7;
+      const avgVol = volumes.slice(-7).reduce((a,b) => a+b, 0)/7;
       const volSpike = volumes[volumes.length-1] / avgVol;
 
       let signal = 'HOLD';
@@ -98,7 +99,6 @@
       let tp1 = current, tp2 = current, sl = current;
       let reason = [];
 
-      // BUY CONDITIONS
       if (rsi < 32 && macd > 0 && volSpike > 1.5) {
         signal = 'BUY';
         entry = current * 0.99;
@@ -107,7 +107,6 @@
         sl = current - 2 * atr;
         reason.push('RSI oversold', 'MACD bullish', 'Volume spike');
       }
-      // SELL CONDITIONS
       else if (rsi > 68 && macd < 0 && current > prices[prices.length-7]) {
         signal = 'SELL';
         entry = current * 1.01;
@@ -124,14 +123,19 @@
       return { signal, entry: entry.toFixed(8), tp1: tp1.toFixed(8), tp2: tp2.toFixed(8), sl: sl.toFixed(8), rr, reason: reason.join(' + ') };
     }
 
-    // === RENDER CHART ===
+    // === RENDER CANDLESTICK CHART ===
     function renderChart(candles, label) {
       const ctx = document.getElementById('chart').getContext('2d');
       if (chart) chart.destroy();
       chart = new Chart(ctx, {
         type: 'candlestick',
-        data: { datasets: [{ label, data: candles, borderColor: '#00ff88' }] },
-        options: { scales: { x: { type: 'time', time: { unit: 'day' } } } }
+        data: { datasets: [{ label, data: candles }] },
+        options: { 
+          scales: { 
+            x: { type: 'time', time: { unit: 'day' } },
+            y: { beginAtZero: false }
+          }
+        }
       });
     }
 
@@ -147,7 +151,10 @@
         const ohlc = await res.json();
         if (!ohlc.length) throw new Error('No data');
 
-        const candles = ohlc.map(([t, o, h, l, c]) => ({ x: new Date(t), o, h, l, c }));
+        const candles = ohlc.map(([t, o, h, l, c]) => ({ 
+          x: new Date(t), 
+          o, h, l, c 
+        }));
         const prices = ohlc.map(x => x[4]);
         const highs = ohlc.map(x => x[2]);
         const lows = ohlc.map(x => x[3]);
@@ -186,6 +193,7 @@
       });
     }
 
+    // Auto-run on load
     setTimeout(analyze, 1000);
   </script>
 </body>
