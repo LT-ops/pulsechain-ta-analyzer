@@ -60,7 +60,7 @@
 
   <script>
     // PASTE YOUR REAL COINGECKO API KEY HERE (e.g., 'CG-abc123...')
-    const API_KEY = 'CG-18Ek9nygCDX1ffwGdaiJkKFz';  // REPLACE THIS
+    const API_KEY = 'CG-18Ek9nygCDX1ffwGdaiJkKFz	';  // REPLACE THIS
     const COIN = 'https://api.coingecko.com/api/v3';
 
     const TOKENS = [
@@ -88,7 +88,7 @@
       const a = document.getElementById('alerts');
       a.innerHTML = '<div class="loading">Loading...</div>';
 
-      if (!API_KEY || API_KEY === 'CG-18Ek9nygCDX1ffwGdaiJkKFz') {
+      if (!API_KEY || API_KEY === 'CG-18Ek9nygCDX1ffwGdaiJkKFz	') {
         a.innerHTML = '<div class="error">Add your CoinGecko API key! (Line 91)</div>';
         return;
       }
