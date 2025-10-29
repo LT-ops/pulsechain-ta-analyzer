@@ -1,0 +1,51 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>PulseChain TA Setup Analyzer</title>
+  <link rel="stylesheet" href="styles.css">
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/chartjs-chart-financial@0.2.1"></script>
+  <script src="https://cdn.jsdelivr.net/npm/technicalindicators@3"></script>
+  <script src="https://cdn.jsdelivr.net/npm/ethers@6"></script> <!-- For MetaMask -->
+</head>
+<body>
+  <header>
+    <h1>🔗 PulseChain TA Detector</h1>
+    <p>Spot setups on PLS, HEX, eHEX & top tokens. Live DEX data via PulseX.</p>
+  </header>
+
+  <section class="controls">
+    <div class="single-token">
+      <input type="text" id="token" placeholder="e.g. pulsechain (PLS)" value="pulsechain" />
+      <button onclick="loadSingle()">Load Token</button>
+      <button onclick="connectWallet()">Connect MetaMask</button>
+    </div>
+    <div class="scanner-toggle">
+      <button onclick="toggleScanner()">Launch Multi-Token Scanner</button>
+    </div>
+  </section>
+
+  <section id="single-chart" class="chart-section">
+    <canvas id="chart"></canvas>
+    <div id="alerts"></div>
+    <div id="dex-info"></div>
+  </section>
+
+  <section id="scanner-section" class="scanner-section hidden">
+    <h2>Top 10 Token Scanner</h2>
+    <table id="scanner-table">
+      <thead><tr><th>Token</th><th>Price</th><th>RSI</th><th>Setup</th><th>Liquidity</th></tr></thead>
+      <tbody></tbody>
+    </table>
+    <canvas id="scanner-chart"></canvas> <!-- Optional aggregate chart -->
+  </section>
+
+  <footer>
+    <button onclick="exportSetup()">Export Setup (JSON/PNG)</button>
+  </footer>
+
+  <script src="script.js"></script>
+</body>
+</html>
