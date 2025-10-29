@@ -18,6 +18,7 @@
     #result { margin: 15px 0; padding: 15px; background: #111; border-left: 4px solid #00ff88; font-size: 15px; line-height: 1.6; }
     .signal { font-weight: bold; font-size: 18px; color: #0f0; }
     .sell { color: #ff6b6b; }
+    .hold { color: #aaa; }
     .loading { color: #888; font-style: italic; text-align: center; padding: 20px; }
     .error { color: #ff6b6b; font-weight: bold; text-align: center; padding: 20px; }
     footer { text-align: center; margin-top: 30px; }
@@ -85,14 +86,13 @@
       suggestions.style.display = 'none';
     };
 
-    // Hide suggestions on click outside
     document.addEventListener('click', (e) => {
       if (!searchInput.contains(e.target) && !suggestions.contains(e.target)) {
         suggestions.style.display = 'none';
       }
     });
 
-    // === INDICATORS & SIGNALS (SAME AS BEFORE) ===
+    // === INDICATORS ===
     function calcRSI(prices, period = 14) {
       if (prices.length < period + 1) return 50;
       let gains = 0, losses = 0;
@@ -124,6 +124,7 @@
       return tr.slice(-period).reduce((a, b) => a + b, 0) / period;
     }
 
+    // === SIGNAL ENGINE (FIXED HOLD) ===
     function generateSignal(data) {
       const { prices, highs, lows, closes, volumes } = data;
       const current = closes[closes.length - 1];
@@ -135,28 +136,29 @@
 
       let signal = 'HOLD';
       let entry = current;
-      let tp1 = current, tp2 = current, sl = current;
-      let reason = [];
+      let tp1 = '-', tp2 = '-', sl = '-';
+      let rr = '-';
+      let reason = 'No strong signal';
 
       if (rsi < 32 && macd > 0 && volSpike > 1.5) {
         signal = 'BUY';
         entry = current * 0.99;
-        tp1 = current * 1.08;
-        tp2 = current * 1.15;
-        sl = current - 2 * atr;
-        reason.push('RSI oversold', 'MACD bullish', 'Volume spike');
+        tp1 = (current * 1.08).toFixed(8);
+        tp2 = (current * 1.15).toFixed(8);
+        sl = (current - 2 * atr).toFixed(8);
+        rr = ((tp1 - entry) / (entry - sl)).toFixed(1);
+        reason = 'RSI oversold + MACD bullish + Volume spike';
       } else if (rsi > 68 && macd < 0 && current > prices[prices.length - 7]) {
         signal = 'SELL';
         entry = current * 1.01;
-        tp1 = current * 0.93;
-        tp2 = current * 0.88;
-        sl = current + 2 * atr;
-        reason.push('RSI overbought', 'MACD bearish', 'Local top');
+        tp1 = (current * 0.93).toFixed(8);
+        tp2 = (current * 0.88).toFixed(8);
+        sl = (current + 2 * atr).toFixed(8);
+        rr = ((entry - tp1) / (sl - entry)).toFixed(1);
+        reason = 'RSI overbought + MACD bearish + Local top';
       }
 
-      const rr = signal === 'BUY' ? ((tp1 - entry) / (entry - sl)).toFixed(1) : ((entry - tp1) / (sl - entry)).toFixed(1);
-
-      return { signal, entry: entry.toFixed(8), tp1: tp1.toFixed(8), tp2: tp2.toFixed(8), sl: sl.toFixed(8), rr, reason: reason.join(' + ') };
+      return { signal, entry: entry.toFixed(8), tp1, tp2, sl, rr, reason };
     }
 
     function renderChart(candles, label) {
@@ -194,15 +196,17 @@
 
         renderChart(candles, selectedId.toUpperCase());
 
-        const signalClass = signal.signal === 'BUY' ? '' : signal.signal === 'SELL' ? 'sell' : '';
+        const signalClass = signal.signal === 'BUY' ? '' : signal.signal === 'SELL' ? 'sell' : 'hold';
+        const tp1Pct = signal.tp1 !== '-' ? ((signal.tp1/signal.entry-1)*100).toFixed(1) : 0;
+
         result.innerHTML = `
           <div class="signal ${signalClass}">${signal.signal} ${selectedId.toUpperCase()}</div>
           <div>Entry: $${signal.entry}</div>
-          <div>TP1: $${signal.tp1} <small>(+${((signal.tp1/signal.entry-1)*100).toFixed(1)}%)</small></div>
+          <div>TP1: $${signal.tp1} <small>${signal.tp1 !== '-' ? '(+' + tp1Pct + '%)' : ''}</small></div>
           <div>TP2: $${signal.tp2}</div>
           <div>SL: $${signal.sl}</div>
           <div>Risk/Reward: 1:${signal.rr}</div>
-          <div><small>Reason: ${signal.reason || 'No strong signal'}</small></div>
+          <div><small>Reason: ${signal.reason}</small></div>
         `;
 
       } catch (e) {
@@ -217,7 +221,6 @@
       });
     }
 
-    // Auto-load on start
     setTimeout(analyze, 1000);
   </script>
 </body>
