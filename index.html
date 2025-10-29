@@ -21,11 +21,9 @@
     footer { text-align: center; margin-top: 30px; }
   </style>
 
-  <!-- CHART.JS + FINANCIAL PLUGIN (FIXED) -->
-  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0"></script>
-  <script src="https://cdn.jsdelivr.net/npm/chartjs-chart-financial@0.2.1"></script>
-  <script src="https://cdn.jsdelivr.net/npm/luxon@3"></script>
-  <script src="https://cdn.jsdelivr.net/npm/chartjs-adapter-luxon@1"></script>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/chartjs-adapter-date-fns@3.0.0/dist/chartjs-adapter-date-fns.bundle.min.js"></script>
+  <script src="https://html2canvas.hertzen.com/dist/html2canvas.min.js"></script>
 </head>
 <body>
   <header>
@@ -52,7 +50,6 @@
     const COIN = 'https://api.coingecko.com/api/v3';
     let chart = null;
 
-    // === INDICATORS ===
     function calcRSI(prices, period = 14) {
       if (prices.length < period + 1) return 50;
       let gains = 0, losses = 0;
@@ -66,7 +63,7 @@
 
     function calcMACD(prices) {
       const ema = (arr, period) => {
-        const k = 2/(period + 1);
+        const k = 2 / (period + 1);
         let ema = arr[0];
         for (let i = 1; i < arr.length; i++) ema = arr[i] * k + ema * (1 - k);
         return ema;
@@ -81,18 +78,17 @@
       for (let i = 1; i < highs.length; i++) {
         tr.push(Math.max(highs[i] - lows[i], Math.abs(highs[i] - closes[i-1]), Math.abs(lows[i] - closes[i-1])));
       }
-      return tr.slice(-period).reduce((a,b) => a+b, 0)/period;
+      return tr.slice(-period).reduce((a, b) => a + b, 0) / period;
     }
 
-    // === TRADE SIGNAL ENGINE ===
     function generateSignal(data) {
       const { prices, highs, lows, closes, volumes } = data;
-      const current = closes[closes.length-1];
+      const current = closes[closes.length - 1];
       const rsi = calcRSI(closes);
       const macd = calcMACD(closes);
       const atr = calcATR(highs, lows, closes);
-      const avgVol = volumes.slice(-7).reduce((a,b) => a+b, 0)/7;
-      const volSpike = volumes[volumes.length-1] / avgVol;
+      const avgVol = volumes.slice(-7).reduce((a, b) => a + b, 0) / 7;
+      const volSpike = volumes[volumes.length - 1] / avgVol;
 
       let signal = 'HOLD';
       let entry = current;
@@ -106,8 +102,7 @@
         tp2 = current * 1.15;
         sl = current - 2 * atr;
         reason.push('RSI oversold', 'MACD bullish', 'Volume spike');
-      }
-      else if (rsi > 68 && macd < 0 && current > prices[prices.length-7]) {
+      } else if (rsi > 68 && macd < 0 && current > prices[prices.length - 7]) {
         signal = 'SELL';
         entry = current * 1.01;
         tp1 = current * 0.93;
@@ -116,30 +111,21 @@
         reason.push('RSI overbought', 'MACD bearish', 'Local top');
       }
 
-      const rr = signal === 'BUY' 
-        ? ((tp1 - entry) / (entry - sl)).toFixed(1)
-        : ((entry - tp1) / (sl - entry)).toFixed(1);
+      const rr = signal === 'BUY' ? ((tp1 - entry) / (entry - sl)).toFixed(1) : ((entry - tp1) / (sl - entry)).toFixed(1);
 
       return { signal, entry: entry.toFixed(8), tp1: tp1.toFixed(8), tp2: tp2.toFixed(8), sl: sl.toFixed(8), rr, reason: reason.join(' + ') };
     }
 
-    // === RENDER CANDLESTICK CHART ===
     function renderChart(candles, label) {
       const ctx = document.getElementById('chart').getContext('2d');
       if (chart) chart.destroy();
       chart = new Chart(ctx, {
-        type: 'candlestick',
-        data: { datasets: [{ label, data: candles }] },
-        options: { 
-          scales: { 
-            x: { type: 'time', time: { unit: 'day' } },
-            y: { beginAtZero: false }
-          }
-        }
+        type: 'line',
+        data: { datasets: [{ label, data: candles.map(c => ({ x: c.x, y: c.c })), borderColor: '#00ff88' }] },
+        options: { scales: { x: { type: 'time', time: { unit: 'day' } } } }
       });
     }
 
-    // === MAIN ANALYZE ===
     async function analyze() {
       const id = document.getElementById('token').value.trim().toLowerCase();
       const result = document.getElementById('result');
@@ -151,16 +137,12 @@
         const ohlc = await res.json();
         if (!ohlc.length) throw new Error('No data');
 
-        const candles = ohlc.map(([t, o, h, l, c]) => ({ 
-          x: new Date(t), 
-          o, h, l, c 
-        }));
+        const candles = ohlc.map(([t, o, h, l, c]) => ({ x: new Date(t), o, h, l, c }));
         const prices = ohlc.map(x => x[4]);
         const highs = ohlc.map(x => x[2]);
         const lows = ohlc.map(x => x[3]);
         const closes = prices;
 
-        // Fetch volume
         const volRes = await fetch(`${COIN}/coins/${id}/market_chart?vs_currency=usd&days=30&x_cg_demo_api_key=${API_KEY}`);
         const volData = await volRes.json();
         const volumes = volData.total_volumes.map(x => x[1]);
@@ -193,7 +175,6 @@
       });
     }
 
-    // Auto-run on load
     setTimeout(analyze, 1000);
   </script>
 </body>
