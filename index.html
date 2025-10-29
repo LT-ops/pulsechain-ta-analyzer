@@ -4,58 +4,158 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
   <title>PulseChain TA Detector</title>
-  <link rel="stylesheet" href="styles.css">
+  <style>
+    body { font-family: 'Courier New', monospace; margin: 0; padding: 20px; background: #0a0a0a; color: #00ff88; }
+    header { text-align: center; margin-bottom: 20px; }
+    .controls { display: flex; gap: 10px; margin-bottom: 20px; flex-wrap: wrap; justify-content: center; }
+    input, button { background: #1a1a1a; color: #00ff88; border: 1px solid #333; padding: 10px; border-radius: 4px; font-size: 14px; }
+    button { cursor: pointer; background: #00ff88; color: #000; font-weight: bold; }
+    button:hover { opacity: 0.8; }
+    canvas { max-width: 100%; background: #000; border: 1px solid #333; margin: 10px 0; }
+    #alerts { margin: 10px 0; padding: 10px; background: #111; border-left: 3px solid #00ff88; font-size: 14px; }
+    .loading { color: #888; font-style: italic; text-align: center; padding: 20px; }
+    .error { color: #ff6b6b; font-weight: bold; text-align: center; padding: 20px; }
+    .no-alert { color: #555; text-align: center; padding: 20px; }
+    .alert { background:#111; border-left:3px solid #00ff88; padding:10px; margin:8px 0; font-size: 14px; }
+    table { width: 100%; border-collapse: collapse; margin: 10px 0; font-size: 13px; }
+    th, td { border: 1px solid #333; padding: 8px; text-align: left; }
+    th { background: #1a1a1a; }
+    .hidden { display: none; }
+    footer { text-align: center; margin-top: 30px; }
+  </style>
 
-  <!-- CHART.JS + FINANCIAL -->
-  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
-  <script src="https://cdn.jsdelivr.net/npm/chartjs-chart-financial@0.2.1"></script>
-
-  <!-- TECHNICAL INDICATORS (BROWSER FIX) -->
-  <script type="module">
-    import { RSI, MACD, BollingerBands } from 'https://cdn.skypack.dev/technicalindicators';
-    window.TI = { RSI, MACD, BollingerBands };
-  </script>
-
-  <!-- ETHERS + HTML2CANVAS -->
-  <script src="https://cdn.jsdelivr.net/npm/ethers@6"></script>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/chartjs-chart-financial@0.2.1/dist/chartjs-chart-financial.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/date-fns@2"></script>
+  <script src="https://cdn.jsdelivr.net/npm/chartjs-adapter-date-fns@3"></script>
   <script src="https://html2canvas.hertzen.com/dist/html2canvas.min.js"></script>
 </head>
 <body>
   <header>
     <h1>PulseChain TA Detector</h1>
-    <p>Spot setups on PLS, HEX, eHEX & top tokens. Live DEX data via PulseX.</p>
+    <p>Live TA for PLS, HEX, eHEX & more</p>
   </header>
 
   <section class="controls">
-    <div class="single-token">
-      <input type="text" id="token" placeholder="e.g. pulsechain (PLS)" value="pulsechain" />
-      <button onclick="loadSingle()">Load Token</button>
-      <button onclick="connectWallet()">Connect MetaMask</button>
-    </div>
-    <div class="scanner-toggle">
-      <button onclick="toggleScanner()">Launch Multi-Token Scanner</button>
-    </div>
+    <input type="text" id="token" placeholder="e.g. pulsechain" value="pulsechain" />
+    <button onclick="loadSingle()">Load</button>
+    <button onclick="toggleScanner()">Scanner</button>
   </section>
 
-  <section id="single-chart" class="chart-section">
+  <section id="single-chart">
     <canvas id="chart"></canvas>
     <div id="alerts"></div>
-    <div id="dex-info"></div>
   </section>
 
-  <section id="scanner-section" class="scanner-section hidden">
-    <h2>Top 10 Token Scanner</h2>
+  <section id="scanner-section" class="hidden">
+    <h2>Top Tokens</h2>
     <table id="scanner-table">
-      <thead><tr><th>Token</th><th>Price</th><th>RSI</th><th>Setup</th><th>Liquidity</th></tr></thead>
+      <thead><tr><th>Token</th><th>Price</th><th>RSI</th><th>Setup</th></tr></thead>
       <tbody></tbody>
     </table>
   </section>
 
   <footer>
-    <button onclick="exportSetup()">Export Setup (JSON + PNG)</button>
+    <button onclick="exportSetup()">Export PNG</button>
   </footer>
 
-  <!-- MAIN SCRIPT -->
-  <script src="script.js"></script>
+  <script>
+    // REPLACE WITH YOUR COINGECKO API KEY
+    const API_KEY = 'CG-YOUR-KEY-HERE';
+    const COIN = 'https://api.coingecko.com/api/v3';
+
+    const TOKENS = [
+      { id: 'pulsechain', s: 'PLS' },
+      { id: 'hex', s: 'HEX' },
+      { id: 'elhex', s: 'eHEX' },
+      { id: 'pulsex', s: 'PLSX' },
+      { id: 'inc', s: 'INC' }
+    ];
+
+    let chart = null;
+
+    function renderChart(data, label) {
+      const ctx = document.getElementById('chart').getContext('2d');
+      if (chart) chart.destroy();
+      chart = new Chart(ctx, {
+        type: 'candlestick',
+        data: { datasets: [{ label, data, borderColor: '#00ff88' }] },
+        options: { scales: { x: { type: 'time', time: { unit: 'day' } } } }
+      });
+    }
+
+    async function loadSingle() {
+      const id = document.getElementById('token').value.trim().toLowerCase();
+      const a = document.getElementById('alerts');
+      a.innerHTML = '<div class="loading">Loading...</div>';
+
+      if (!API_KEY || API_KEY === 'CG-18Ek9nygCDX1ffwGdaiJkKFz') {
+        a.innerHTML = '<div class="error">Add your CoinGecko API key!</div>';
+        return;
+      }
+
+      try {
+        const res = await fetch(`${COIN}/coins/${id}/ohlc?vs_currency=usd&days=30&x_cg_demo_api_key=${API_KEY}`);
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        const d = await res.json();
+        if (!d.length) throw new Error('No data');
+
+        const candles = d.map(([t,o,h,l,c]) => ({ x: new Date(t), o, h, l, c }));
+        const closes = d.map(x => x[4]);
+        const rsi = calcRSI(closes);
+
+        renderChart(candles, id.toUpperCase());
+        const alert = rsi < 30 ? 'OVERSOLD' : rsi > 70 ? 'OVERBOUGHT' : 'NEUTRAL';
+        a.innerHTML = `<div class="alert">RSI: ${rsi.toFixed(1)} → ${alert}</div>`;
+
+      } catch (e) {
+        a.innerHTML = `<div class="error">Failed: ${e.message}</div>`;
+      }
+    }
+
+    function calcRSI(arr) {
+      if (arr.length < 15) return 50;
+      let gains = 0, losses = 0;
+      for (let i = arr.length - 14; i < arr.length; i++) {
+        const diff = arr[i] - arr[i-1];
+        if (diff > 0) gains += diff; else losses -= diff;
+      }
+      const rs = gains / (losses || 1);
+      return 100 - (100 / (1 + rs));
+    }
+
+    async function toggleScanner() {
+      const s = document.getElementById('scanner-section');
+      s.classList.toggle('hidden');
+      if (!s.classList.contains('hidden')) runScanner();
+    }
+
+    async function runScanner() {
+      const tbody = document.querySelector('#scanner-table tbody');
+      tbody.innerHTML = '<tr><td colspan="4" class="loading">Scanning...</td></tr>';
+      const rows = [];
+      for (const t of TOKENS) {
+        try {
+          const res = await fetch(`${COIN}/coins/${t.id}/market_chart?vs_currency=usd&days=7&x_cg_demo_api_key=${API_KEY}`);
+          if (!res.ok) continue;
+          const d = await res.json();
+          const p = d.prices[d.prices.length-1][1];
+          const rsi = calcRSI(d.prices.map(x => x[1]));
+          const setup = rsi < 30 ? 'Oversold' : rsi > 70 ? 'Overbought' : 'Neutral';
+          rows.push(`<tr><td>${t.s}</td><td>$${p.toFixed(6)}</td><td>${rsi.toFixed(1)}</td><td>${setup}</td></tr>`);
+        } catch {}
+      }
+      tbody.innerHTML = rows.length ? rows.join('') : '<tr><td colspan="4">No data</td></tr>';
+    }
+
+    function exportSetup() {
+      html2canvas(document.getElementById('single-chart')).then(c => {
+        const a = document.createElement('a');
+        a.href = c.toDataURL(); a.download = 'pulsechain-ta.png'; a.click();
+      });
+    }
+
+    setTimeout(loadSingle, 1000);
+  </script>
 </body>
 </html>
