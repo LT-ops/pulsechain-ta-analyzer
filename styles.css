@@ -28,3 +28,5 @@ th, td { border: 1px solid #333; padding: 8px; text-align: left; }
 th { background: #1a1a1a; }
 .hidden { display: none; }
 footer { text-align: center; margin-top: 20px; }
+.loading { color: #888; font-style: italic; }
+.error { color: #ff6b6b; font-weight: bold; }
