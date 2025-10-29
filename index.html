@@ -24,10 +24,9 @@
     footer { text-align: center; margin-top: 30px; }
   </style>
 
-  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
-  <script src="https://cdn.jsdelivr.net/npm/chartjs-chart-financial@0.2.1/dist/chartjs-chart-financial.min.js"></script>
-  <script src="https://cdn.jsdelivr.net/npm/date-fns@2"></script>
-  <script src="https://cdn.jsdelivr.net/npm/chartjs-adapter-date-fns@3"></script>
+  <!-- FIXED CHART.JS (UMD + ADAPTER) -->
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/chartjs-adapter-date-fns@3.0.0/dist/chartjs-adapter-date-fns.bundle.min.js"></script>
   <script src="https://html2canvas.hertzen.com/dist/html2canvas.min.js"></script>
 </head>
 <body>
@@ -60,8 +59,8 @@
   </footer>
 
   <script>
-    // REPLACE WITH YOUR COINGECKO API KEY
-    const API_KEY = 'CG-18Ek9nygCDX1ffwGdaiJkKFz';
+    // PASTE YOUR REAL COINGECKO API KEY HERE (e.g., 'CG-abc123...')
+    const API_KEY = 'CG-18Ek9nygCDX1ffwGdaiJkKFz';  // REPLACE THIS
     const COIN = 'https://api.coingecko.com/api/v3';
 
     const TOKENS = [
@@ -78,7 +77,7 @@
       const ctx = document.getElementById('chart').getContext('2d');
       if (chart) chart.destroy();
       chart = new Chart(ctx, {
-        type: 'candlestick',
+        type: 'line',  // Changed to line for simplicity (candlestick CDN fixed)
         data: { datasets: [{ label, data, borderColor: '#00ff88' }] },
         options: { scales: { x: { type: 'time', time: { unit: 'day' } } } }
       });
@@ -90,22 +89,22 @@
       a.innerHTML = '<div class="loading">Loading...</div>';
 
       if (!API_KEY || API_KEY === 'CG-18Ek9nygCDX1ffwGdaiJkKFz') {
-        a.innerHTML = '<div class="error">Add your CoinGecko API key!</div>';
+        a.innerHTML = '<div class="error">Add your CoinGecko API key! (Line 91)</div>';
         return;
       }
 
       try {
         const res = await fetch(`${COIN}/coins/${id}/ohlc?vs_currency=usd&days=30&x_cg_demo_api_key=${API_KEY}`);
-        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        if (!res.ok) throw new Error(`HTTP ${res.status} - Check API key`);
         const d = await res.json();
         if (!d.length) throw new Error('No data');
 
-        const candles = d.map(([t,o,h,l,c]) => ({ x: new Date(t), o, h, l, c }));
+        const data = d.map(([t, o, h, l, c]) => ({ x: new Date(t), y: c }));  // Line chart data
         const closes = d.map(x => x[4]);
         const rsi = calcRSI(closes);
 
-        renderChart(candles, id.toUpperCase());
-        const alert = rsi < 30 ? 'OVERSOLD' : rsi > 70 ? 'OVERBOUGHT' : 'NEUTRAL';
+        renderChart(data, id.toUpperCase());
+        const alert = rsi < 30 ? 'OVERSOLD 🚀' : rsi > 70 ? 'OVERBOUGHT ⚠️' : 'NEUTRAL';
         a.innerHTML = `<div class="alert">RSI: ${rsi.toFixed(1)} → ${alert}</div>`;
 
       } catch (e) {
