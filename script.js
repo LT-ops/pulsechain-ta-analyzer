@@ -3,13 +3,15 @@ const COINGECKO_BASE = 'https://api.coingecko.com/api/v3';
 const DEXSCREENER_BASE = 'https://api.dexscreener.com/latest/dex/pairs/pulsechain';
 const TOP_TOKENS = [
   { id: 'pulsechain', symbol: 'PLS', pair: 'USDC/WPLS' },
-  { id: 'hex-pulsechain', symbol: 'HEX', pair: 'HEX/WPLS' },
-  { id: 'hex-pulsechain-ehex', symbol: 'eHEX', pair: 'eHEX/WPLS' }, // Adjust ID if needed
+  { id: 'hex', symbol: 'HEX', pair: 'HEX/WPLS' }, // HEX is on Ethereum, but PulseChain fork uses 'hex'
+  { id: 'elhex', symbol: 'eHEX', pair: 'eHEX/WPLS' }, // eHEX is 'elhex' on CoinGecko
   { id: 'pulsex', symbol: 'PLSX', pair: null },
-  { id: 'time-pulsechain', symbol: 'TIME', pair: null },
-  // Add more from CoinGecko ecosystem: pDAI ~ 'dai-pulsechain', etc.
-  { id: 'dai-pulsechain', symbol: 'pDAI', pair: null },
-  { id: 'usd-coin-pulsechain', symbol: 'USDC', pair: null }
+  { id: 'mintra', symbol: 'MINTRA', pair: null },
+  { id: 'inc', symbol: 'INC', pair: null },
+  { id: 'pdai', symbol: 'pDAI', pair: null },
+  { id: 'pusdc', symbol: 'pUSDC', pair: null },
+  { id: 'peth', symbol: 'pETH', pair: null },
+  { id: 'liquid-loans', symbol: 'LIQ', pair: null }
 ];
 let chart, scannerChart;
 let provider; // For MetaMask
