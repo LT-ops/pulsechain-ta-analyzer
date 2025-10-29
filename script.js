@@ -1,30 +1,36 @@
-// Config
+// ---------------------------------------------------------------
+// script.js – PulseChain TA Detector
+// ---------------------------------------------------------------
 const COINGECKO_BASE = 'https://api.coingecko.com/api/v3';
 const DEXSCREENER_BASE = 'https://api.dexscreener.com/latest/dex/pairs/pulsechain';
-const TOP_TOKENS = [
-  { id: 'pulsechain', symbol: 'PLS', pair: 'USDC/WPLS' },
-  { id: 'hex', symbol: 'HEX', pair: 'HEX/WPLS' }, // HEX is on Ethereum, but PulseChain fork uses 'hex'
-  { id: 'elhex', symbol: 'eHEX', pair: 'eHEX/WPLS' }, // eHEX is 'elhex' on CoinGecko
-  { id: 'pulsex', symbol: 'PLSX', pair: null },
-  { id: 'mintra', symbol: 'MINTRA', pair: null },
-  { id: 'inc', symbol: 'INC', pair: null },
-  { id: 'pdai', symbol: 'pDAI', pair: null },
-  { id: 'pusdc', symbol: 'pUSDC', pair: null },
-  { id: 'peth', symbol: 'pETH', pair: null },
-  { id: 'liquid-loans', symbol: 'LIQ', pair: null }
-];
-let chart, scannerChart;
-let provider; // For MetaMask
 
-// Load single token
+const TOP_TOKENS = [
+  { id: 'pulsechain', symbol: 'PLS',   pair: 'USDC/WPLS' },
+  { id: 'hex',        symbol: 'HEX',   pair: 'HEX/WPLS' },
+  { id: 'elhex',      symbol: 'eHEX',  pair: 'eHEX/WPLS' },
+  { id: 'pulsex',     symbol: 'PLSX',  pair: null },
+  { id: 'mintra',     symbol: 'MINTRA',pair: null },
+  { id: 'inc',        symbol: 'INC',   pair: 'INC/WPLS' },
+  { id: 'pdai',       symbol: 'pDAI',  pair: null },
+  { id: 'pusdc',      symbol: 'pUSDC', pair: null },
+  { id: 'liquid-loans', symbol: 'LIQ', pair: null },
+  { id: 'atropa',     symbol: 'ATROPA',pair: null }
+];
+
+let chart, scannerChart;
+let provider;   // MetaMask
+
+// ---------------------------------------------------------------
+// SINGLE TOKEN
+// ---------------------------------------------------------------
 async function loadSingle() {
   const tokenInput = document.getElementById('token');
-  const tokenId = tokenInput.value.trim().toLowerCase();
-  const alertsDiv = document.getElementById('alerts');
-  const dexInfoDiv = document.getElementById('dex-info');
+  const tokenId    = tokenInput.value.trim().toLowerCase();
+  const alertsDiv  = document.getElementById('alerts');
+  const dexDiv     = document.getElementById('dex-info');
 
-  alertsDiv.innerHTML = '<div class="loading">Loading TA data...</div>';
-  dexInfoDiv.innerHTML = '';
+  alertsDiv.innerHTML = '<div class="loading">Loading TA data…</div>';
+  dexDiv.innerHTML    = '';
 
   if (!tokenId) {
     alertsDiv.innerHTML = '<div class="error">Enter a token ID!</div>';
@@ -33,21 +39,36 @@ async function loadSingle() {
 
   try {
     const days = 30;
-    const res = await fetch(`${COINGECKO_BASE}/coins/${tokenId}/ohlc?vs_currency=usd&days=${days}`);
-    
-    if (!res.ok) throw new Error(`Token not found: ${tokenId}`);
-    
-    const data = await res.json();
-    if (!data.length) throw new Error('No price data available');
+    const ohlcRes = await fetch(`${COINGECKO_BASE}/coins/${tokenId}/ohlc?vs_currency=usd&days=${days}`);
+    if (!ohlcRes.ok) throw new Error(`Token not found: ${tokenId}`);
 
-    // ... rest of your code ...
-  } catch (error) {
-    alertsDiv.innerHTML = `<div class="error">Error: ${error.message}</div>`;
-    console.error(error);
+    const ohlc = await ohlcRes.json();
+    if (!ohlc.length) throw new Error('No price data');
+
+    // ---- market chart for volume ----
+    const marketRes = await fetch(`${COINGECKO_BASE}/coins/${tokenId}/market_chart?vs_currency=usd&days=${days}`);
+    const market = await marketRes.json();
+
+    const candles = ohlc.map(([ts, o, h, l, c]) => ({ x: new Date(ts), o, h, l, c }));
+    const closes  = ohlc.map(d => d[4]);
+    const volumes = market.total_volumes?.map(v => v[1]) ?? [];
+
+    const rsi = TI.RSI.calculate({ values: closes, period: 14 });
+    const macd = TI.MACD.calculate({ values: closes, fastPeriod: 12, slowPeriod: 26, signalPeriod: 9 });
+    const bb   = TI.BollingerBands.calculate({ values: closes, period: 20, stdDev: 2 });
+
+    renderChart('chart', candles, tokenId.toUpperCase());
+    detectSetups(candles, rsi, macd, bb, closes, volumes, tokenId);
+    await loadDexInfo(tokenId);
+  } catch (e) {
+    alertsDiv.innerHTML = `<div class="error">Error: ${e.message}</div>`;
+    console.error(e);
   }
 }
 
-// Render candlestick chart
+// ---------------------------------------------------------------
+// CHART RENDER
+// ---------------------------------------------------------------
 function renderChart(canvasId, candles, label) {
   const ctx = document.getElementById(canvasId).getContext('2d');
   if (chart) chart.destroy();
@@ -62,128 +83,150 @@ function renderChart(canvasId, candles, label) {
   });
 }
 
-// Detect setups (enhanced)
-function detectSetups(candles, rsi, macd, bb, closes, tokenId) {
+// ---------------------------------------------------------------
+// SETUP DETECTION
+// ---------------------------------------------------------------
+function detectSetups(candles, rsi, macd, bb, closes, volumes, tokenId) {
   const alerts = [];
-  const last = closes.length - 1;
-  if (volumes[last] > volumes[last-1] * 2) {
-  alerts.push(`Volume Spike: ${((volumes[last]/volumes[last-1]-1)*100).toFixed(0)}% – Whales Active`);
-}
+  const last   = closes.length - 1;
 
-  // RSI Oversold + Bullish
-  if (rsi[last] < 30 && closes[last] > closes[last-1]) {
-    alerts.push(`🚀 ${tokenId.toUpperCase()}: RSI Oversold Reversal – Buy Dip?`);
+  // RSI Oversold + Bullish candle
+  if (rsi[last] < 30 && closes[last] > closes[last - 1]) {
+    alerts.push(`${tokenId.toUpperCase()}: RSI Oversold Reversal – Buy Dip?`);
   }
 
-  // MACD Crossover
+  // MACD Bullish Crossover
   const macdLast = macd[macd.length - 1];
   const macdPrev = macd[macd.length - 2];
   if (macdPrev?.MACD < macdPrev.signal && macdLast.MACD > macdLast.signal) {
-    alerts.push(`📈 ${tokenId.toUpperCase()}: MACD Bullish Cross – Momentum Shift`);
+    alerts.push(`${tokenId.toUpperCase()}: MACD Bullish Cross – Momentum Shift`);
   }
 
-  // Bollinger Squeeze (volatility breakout)
+  // Bollinger Squeeze + Breakout
   const bbLast = bb[last];
-  const squeeze = (bbLast.upper - bbLast.lower) / bbLast.middle < 0.05; // Tight bands
+  const squeeze = (bbLast.upper - bbLast.lower) / bbLast.middle < 0.05;
   if (squeeze && closes[last] > bbLast.middle) {
-    alerts.push(`⚡ ${tokenId.toUpperCase()}: Bollinger Squeeze Breakout – Volatile Pump Incoming`);
+    alerts.push(`${tokenId.toUpperCase()}: Bollinger Squeeze Breakout – Volatility Pump`);
   }
 
-  document.getElementById('alerts').innerHTML = alerts.map(a => `<div class="alert">${a}</div>`).join('') || '<div class="no-alert">No setups – chill for now.</div>';
+  // Volume spike (2× previous day)
+  if (volumes.length && volumes[last] > volumes[last - 1] * 2) {
+    const pct = ((volumes[last] / volumes[last - 1] - 1) * 100).toFixed(0);
+    alerts.push(`${tokenId.toUpperCase()}: Volume Spike +${pct}% – Whales Active`);
+  }
+
+  const html = alerts.length
+    ? alerts.map(a => `<div class="alert">${a}</div>`).join('')
+    : '<div class="no-alert">No setups – waiting for the next move.</div>';
+  document.getElementById('alerts').innerHTML = html;
 }
 
-// Load DEX pair info
+// ---------------------------------------------------------------
+// DEX INFO (PulseX liquidity)
+// ---------------------------------------------------------------
 async function loadDexInfo(tokenId) {
   const pairs = await fetch('dex-pairs.json').then(r => r.json());
-  const pairKey = TOP_TOKENS.find(t => t.id === tokenId)?.pair;
-  if (!pairKey) return;
+  const token  = TOP_TOKENS.find(t => t.id === tokenId);
+  if (!token?.pair) return;
 
-  const pairAddr = pairs[pairKey];
-  const res = await fetch(`${DEXSCREENER_BASE}/${pairAddr}`);
-  const dexData = await res.json();
-  const { liquidity: { usd }, volume: { h24 }, fdv } = dexData.pairs[0] || {};
+  const addr = pairs[token.pair];
+  if (!addr) return;
 
-  document.getElementById('dex-info').innerHTML = `
-    <div class="dex-alert">
-      💧 Liquidity: $${usd?.toLocaleString() || 'N/A'} | 24h Vol: $${h24?.toLocaleString() || 'N/A'} | FDV: $${fdv?.toLocaleString() || 'N/A'}
-      ${usd < 100000 ? '<span style="color:orange">⚠️ Low Liquidity – Slippage Risk</span>' : ''}
-    </div>
-  `;
+  try {
+    const res = await fetch(`${DEXSCREENER_BASE}/${addr}`);
+    const data = await res.json();
+    const pair = data?.pairs?.[0];
+    if (!pair) return;
+
+    const liq = pair.liquidity?.usd ?? 0;
+    const vol = pair.volume?.h24 ?? 0;
+    const fdv = pair.fdv ?? 0;
+
+    const lowLiq = liq < 100_000 ? '<span style="color:orange">Low Liquidity – Slippage Risk</span>' : '';
+    document.getElementById('dex-info').innerHTML = `
+      <div class="dex-alert">
+        Liquidity: $${liq.toLocaleString()} | 24h Vol: $${vol.toLocaleString()} | FDV: $${fdv.toLocaleString()}
+        ${lowLiq}
+      </div>`;
+  } catch (e) {
+    console.error('DexScreener error', e);
+  }
 }
 
-// Multi-Token Scanner
+// ---------------------------------------------------------------
+// MULTI-TOKEN SCANNER
+// ---------------------------------------------------------------
 async function toggleScanner() {
-  const section = document.getElementById('scanner-section');
-  section.classList.toggle('hidden');
-  if (!section.classList.contains('hidden')) await runScanner();
+  const sec = document.getElementById('scanner-section');
+  sec.classList.toggle('hidden');
+  if (!sec.classList.contains('hidden')) await runScanner();
 }
 
 async function runScanner() {
-  const tbody = document.getElementById('scanner-table').querySelector('tbody');
-  tbody.innerHTML = '';
-  let allData = [];
+  const tbody = document.querySelector('#scanner-table tbody');
+  tbody.innerHTML = '<tr><td colspan="5" class="loading">Scanning top tokens…</td></tr>';
 
-  for (const token of TOP_TOKENS.slice(0, 10)) { // Top 10
+  const rows = [];
+  for (const token of TOP_TOKENS.slice(0, 10)) {
     try {
       const res = await fetch(`${COINGECKO_BASE}/coins/${token.id}/market_chart?vs_currency=usd&days=7`);
       const data = await res.json();
       const closes = data.prices.map(p => p[1]);
-      const rsi = TI.RSI.calculate({ values: closes, period: 14 })[closes.length - 1];
-      const setup = rsi < 30 ? 'Oversold' : (rsi > 70 ? 'Overbought' : 'Neutral');
+      const rsi = TI.RSI.calculate({ values: closes, period: 14 }).slice(-1)[0];
       const price = closes[closes.length - 1];
+      const setup = rsi < 30 ? 'Oversold' : rsi > 70 ? 'Overbought' : 'Neutral';
+      const liq = token.pair ? 'High' : '—';
 
-      // Mock liquidity from DEX (expand)
-      const liq = token.pair ? 'High' : 'Check PulseX';
-
-      tbody.innerHTML += `<tr><td>${token.symbol}</td><td>$${price.toFixed(6)}</td><td>${rsi.toFixed(1)}</td><td>${setup}</td><td>${liq}</td></tr>`;
-      allData.push({ label: token.symbol, data: closes.slice(-7) }); // Last week for aggregate
-    } catch (e) { console.log(`Scan failed for ${token.id}`); }
+      rows.push(`<tr>
+        <td>${token.symbol}</td>
+        <td>$${price.toFixed(6)}</td>
+        <td>${rsi.toFixed(1)}</td>
+        <td>${setup}</td>
+        <td>${liq}</td>
+      </tr>`);
+    } catch (e) {
+      rows.push(`<tr><td colspan="5" class="error">Failed: ${token.symbol}</td></tr>`);
+    }
   }
-
-  // Aggregate chart (simple line for overview)
-  renderScannerChart(allData);
+  tbody.innerHTML = rows.join('');
 }
 
-function renderScannerChart(data) {
-  const ctx = document.getElementById('scanner-chart').getContext('2d');
-  if (scannerChart) scannerChart.destroy();
-  scannerChart = new Chart(ctx, {
-    type: 'line',
-    data: { labels: Array(7).fill().map((_, i) => `Day ${i+1}`), datasets: data.map(d => ({ label: d.label, data: d.data, borderColor: '#00ff88' })) },
-    options: { scales: { y: { beginAtZero: false } }, plugins: { legend: { labels: { color: '#00ff88' } } } }
-  });
-}
-
-// MetaMask Connect (stub)
+// ---------------------------------------------------------------
+// METAMASK (stub)
+// ---------------------------------------------------------------
 async function connectWallet() {
-  if (typeof window.ethereum !== 'undefined') {
-    provider = new ethers.BrowserProvider(window.ethereum);
-    await provider.send('eth_requestAccounts', []);
-    alert('MetaMask connected! Add portfolio TA later.');
-  } else {
-    alert('Install MetaMask!');
-  }
+  if (!window.ethereum) return alert('Install MetaMask!');
+  provider = new ethers.BrowserProvider(window.ethereum);
+  await provider.send('eth_requestAccounts', []);
+  alert('MetaMask connected – portfolio TA coming soon.');
 }
 
-// Export (JSON + PNG via html2canvas)
+// ---------------------------------------------------------------
+// EXPORT (JSON + PNG)
+// ---------------------------------------------------------------
 function exportSetup() {
-  const data = { alerts: document.getElementById('alerts').innerText, token: document.getElementById('token').value };
-  const json = JSON.stringify(data, null, 2);
-  const blob = new Blob([json], { type: 'application/json' });
+  const data = {
+    token: document.getElementById('token').value,
+    alerts: document.getElementById('alerts').innerText,
+    timestamp: new Date().toISOString()
+  };
+  const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
   const url = URL.createObjectURL(blob);
-  html2canvas(document.getElementById('single-chart')).then(canvas => {
   const a = document.createElement('a');
-  a.href = canvas.toDataURL();
-  a.download = 'pulsechain-setup.png';
-  a.click();
-});
+  a.href = url; a.download = 'pulsechain-setup.json'; a.click();
 
-  // PNG (add html2canvas CDN if needed)
-  // html2canvas(document.getElementById('single-chart')).then(canvas => { /* download */ });
+  // PNG export (requires html2canvas CDN – add in index.html if you want it)
 }
 
-// Auto-load
-loadSingle();
+// ---------------------------------------------------------------
+// AUTO-REFRESH
+// ---------------------------------------------------------------
 setInterval(() => {
-  if (document.getElementById('token').value) loadSingle();
+  const token = document.getElementById('token').value.trim();
+  if (token) loadSingle();
 }, 5 * 60 * 1000);
+
+// ---------------------------------------------------------------
+// START
+// ---------------------------------------------------------------
+loadSingle();
