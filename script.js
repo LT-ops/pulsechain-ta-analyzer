@@ -162,10 +162,12 @@ function exportSetup() {
   const json = JSON.stringify(data, null, 2);
   const blob = new Blob([json], { type: 'application/json' });
   const url = URL.createObjectURL(blob);
+  html2canvas(document.getElementById('single-chart')).then(canvas => {
   const a = document.createElement('a');
-  a.href = url;
-  a.download = 'ta-setup.json';
+  a.href = canvas.toDataURL();
+  a.download = 'pulsechain-setup.png';
   a.click();
+});
 
   // PNG (add html2canvas CDN if needed)
   // html2canvas(document.getElementById('single-chart')).then(canvas => { /* download */ });
