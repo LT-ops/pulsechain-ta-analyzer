@@ -18,24 +18,33 @@ let provider; // For MetaMask
 
 // Load single token
 async function loadSingle() {
-  const tokenId = document.getElementById('token').value.toLowerCase();
-  const days = 30;
-  const res = await fetch(`${COINGECKO_BASE}/coins/${tokenId}/ohlc?vs_currency=usd&days=${days}`);
-  if (!res.ok) { alert('Token not found!'); return; }
-  const data = await res.json();
-  const marketRes = await fetch(`${COINGECKO_BASE}/coins/${tokenId}/market_chart?vs_currency=usd&days=${days}`);
-const marketData = await marketRes.json();
-const volumes = marketData.total_volumes.map(v => v[1]);
+  const tokenInput = document.getElementById('token');
+  const tokenId = tokenInput.value.trim().toLowerCase();
+  const alertsDiv = document.getElementById('alerts');
+  const dexInfoDiv = document.getElementById('dex-info');
 
-  const candles = data.map(([ts, o, h, l, c]) => ({ x: new Date(ts), o, h, l, c }));
-  const closes = data.map(d => d[4]);
-  const rsi = TI.RSI.calculate({ values: closes, period: 14 });
-  const macd = TI.MACD.calculate({ values: closes, fastPeriod: 12, slowPeriod: 26, signalPeriod: 9 });
-  const bb = TI.BollingerBands.calculate({ values: closes, period: 20, stdDev: 2 });
+  alertsDiv.innerHTML = '<div class="loading">Loading TA data...</div>';
+  dexInfoDiv.innerHTML = '';
 
-  renderChart('chart', candles, tokenId);
-  detectSetups(candles, rsi, macd, bb, closes, tokenId);
-  await loadDexInfo(tokenId);
+  if (!tokenId) {
+    alertsDiv.innerHTML = '<div class="error">Enter a token ID!</div>';
+    return;
+  }
+
+  try {
+    const days = 30;
+    const res = await fetch(`${COINGECKO_BASE}/coins/${tokenId}/ohlc?vs_currency=usd&days=${days}`);
+    
+    if (!res.ok) throw new Error(`Token not found: ${tokenId}`);
+    
+    const data = await res.json();
+    if (!data.length) throw new Error('No price data available');
+
+    // ... rest of your code ...
+  } catch (error) {
+    alertsDiv.innerHTML = `<div class="error">Error: ${error.message}</div>`;
+    console.error(error);
+  }
 }
 
 // Render candlestick chart
