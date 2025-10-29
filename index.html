@@ -3,17 +3,26 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-  <title>PulseChain TA Setup Analyzer</title>
+  <title>PulseChain TA Detector</title>
   <link rel="stylesheet" href="styles.css">
+
+  <!-- CHART.JS + FINANCIAL -->
   <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/chartjs-chart-financial@0.2.1"></script>
-  <script src="https://cdn.jsdelivr.net/npm/technicalindicators@3"></script>
-  <script src="https://cdn.jsdelivr.net/npm/ethers@6"></script> <!-- For MetaMask -->
+
+  <!-- TECHNICAL INDICATORS (BROWSER FIX) -->
+  <script type="module">
+    import { RSI, MACD, BollingerBands } from 'https://cdn.skypack.dev/technicalindicators';
+    window.TI = { RSI, MACD, BollingerBands };
+  </script>
+
+  <!-- ETHERS + HTML2CANVAS -->
+  <script src="https://cdn.jsdelivr.net/npm/ethers@6"></script>
   <script src="https://html2canvas.hertzen.com/dist/html2canvas.min.js"></script>
 </head>
 <body>
   <header>
-    <h1>🔗 PulseChain TA Detector</h1>
+    <h1>PulseChain TA Detector</h1>
     <p>Spot setups on PLS, HEX, eHEX & top tokens. Live DEX data via PulseX.</p>
   </header>
 
@@ -40,13 +49,13 @@
       <thead><tr><th>Token</th><th>Price</th><th>RSI</th><th>Setup</th><th>Liquidity</th></tr></thead>
       <tbody></tbody>
     </table>
-    <canvas id="scanner-chart"></canvas> <!-- Optional aggregate chart -->
   </section>
 
   <footer>
-    <button onclick="exportSetup()">Export Setup (JSON/PNG)</button>
+    <button onclick="exportSetup()">Export Setup (JSON + PNG)</button>
   </footer>
 
+  <!-- MAIN SCRIPT -->
   <script src="script.js"></script>
 </body>
 </html>
