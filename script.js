@@ -24,13 +24,12 @@ let provider;   // MetaMask
 // SINGLE TOKEN
 // ---------------------------------------------------------------
 async function loadSingle() {
-  const tokenInput = document.getElementById('token');
-  const tokenId    = tokenInput.value.trim().toLowerCase();
-  const alertsDiv  = document.getElementById('alerts');
-  const dexDiv     = document.getElementById('dex-info');
+  const tokenId = document.getElementById('token').value.trim().toLowerCase();
+  const alertsDiv = document.getElementById('alerts');
+  const dexDiv = document.getElementById('dex-info');
 
-  alertsDiv.innerHTML = '<div class="loading">Loading TA data…</div>';
-  dexDiv.innerHTML    = '';
+  alertsDiv.innerHTML = '<div class="loading">Fetching data from CoinGecko...</div>';
+  dexDiv.innerHTML = '';
 
   if (!tokenId) {
     alertsDiv.innerHTML = '<div class="error">Enter a token ID!</div>';
@@ -38,12 +37,39 @@ async function loadSingle() {
   }
 
   try {
-    const days = 30;
-    const ohlcRes = await fetch(`${COINGECKO_BASE}/coins/${tokenId}/ohlc?vs_currency=usd&days=${days}`);
-    if (!ohlcRes.ok) throw new Error(`Token not found: ${tokenId}`);
+    // USE CORS PROXY
+    const proxy = 'https://corsproxy.io/?';
+    const url = `${proxy}https://api.coingecko.com/api/v3/coins/${tokenId}/ohlc?vs_currency=usd&days=30`;
 
-    const ohlc = await ohlcRes.json();
-    if (!ohlc.length) throw new Error('No price data');
+    console.log('Fetching:', url); // DEBUG
+    const res = await fetch(url);
+    
+    if (!res.ok) {
+      const text = await res.text();
+      throw new Error(`HTTP ${res.status}: ${text.substring(0, 200)}`);
+    }
+
+    const ohlc = await res.json();
+    if (!ohlc || ohlc.length === 0) throw new Error('No OHLC data returned');
+
+    // SUCCESS — continue with chart
+    alertsDiv.innerHTML = `<div style="color:yellow">Data loaded! (${ohlc.length} candles)</div>`;
+    
+    // ... rest of your chart code ...
+    const candles = ohlc.map(([ts, o, h, l, c]) => ({ x: new Date(ts), o, h, l, c }));
+    const closes = ohlc.map(d => d[4]);
+    const rsi = TI.RSI.calculate({ values: closes, period: 14 });
+    const macd = TI.MACD.calculate({ values: closes, fastPeriod: 12, slowPeriod: 26, signalPeriod: 9 });
+    const bb = TI.BollingerBands.calculate({ values: closes, period: 20, stdDev: 2 });
+
+    renderChart('chart', candles, tokenId.toUpperCase());
+    detectSetups(candles, rsi, macd, bb, closes, [], tokenId);
+
+  } catch (e) {
+    console.error('Load failed:', e);
+    alertsDiv.innerHTML = `<div class="error">API ERROR: ${e.message}</div>`;
+  }
+}
 
     // ---- market chart for volume ----
     const marketRes = await fetch(`${COINGECKO_BASE}/coins/${tokenId}/market_chart?vs_currency=usd&days=${days}`);
