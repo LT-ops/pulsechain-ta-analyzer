@@ -173,3 +173,6 @@ function exportSetup() {
 
 // Auto-load
 loadSingle();
+setInterval(() => {
+  if (document.getElementById('token').value) loadSingle();
+}, 5 * 60 * 1000);
