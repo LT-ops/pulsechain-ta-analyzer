@@ -23,6 +23,9 @@ async function loadSingle() {
   const res = await fetch(`${COINGECKO_BASE}/coins/${tokenId}/ohlc?vs_currency=usd&days=${days}`);
   if (!res.ok) { alert('Token not found!'); return; }
   const data = await res.json();
+  const marketRes = await fetch(`${COINGECKO_BASE}/coins/${tokenId}/market_chart?vs_currency=usd&days=${days}`);
+const marketData = await marketRes.json();
+const volumes = marketData.total_volumes.map(v => v[1]);
 
   const candles = data.map(([ts, o, h, l, c]) => ({ x: new Date(ts), o, h, l, c }));
   const closes = data.map(d => d[4]);
